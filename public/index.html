@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>Trợ lý xử lý công việc</title>
+<style>
+  :root {
+    --primary: #2563eb; --bg: #f5f6fa; --card: #ffffff;
+    --text: #1f2430; --muted: #6b7280; --border: #e5e7eb;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); padding-bottom: 70px; }
+  header { background: var(--primary); color: white; padding: 16px; text-align: center;
+    font-weight: 600; font-size: 18px; position: sticky; top: 0; z-index: 10; }
+  .screen { display: none; padding: 12px; max-width: 480px; margin: 0 auto; }
+  .screen.active { display: block; }
+  .card { background: var(--card); border-radius: 14px; padding: 14px; margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 4px; }
+  input, select, textarea { width: 100%; padding: 10px; border: 1px solid var(--border);
+    border-radius: 10px; font-size: 15px; margin-bottom: 10px; background: #fafafa; }
+  button { width: 100%; padding: 12px; background: var(--primary); color: white; border: none;
+    border-radius: 10px; font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+  button.secondary { background: #10b981; }
+  button.danger { background: #ef4444; }
+  button.outline { background: white; color: var(--primary); border: 1.5px solid var(--primary); }
+  button:active { opacity: 0.85; }
+  .row-btns { display: flex; gap: 8px; }
+  .row-btns button { flex: 1; }
+  .row-btns button.outline { background: white; color: var(--primary); border: 1.5px solid var(--primary); }
+  .chat-log { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; max-height: 55vh; overflow-y: auto; }
+  .bubble { padding: 10px 12px; border-radius: 12px; max-width: 85%; font-size: 14px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+  .bubble.user { align-self: flex-end; background: var(--primary); color: white; border-bottom-right-radius: 2px; }
+  .bubble.bot { align-self: flex-start; background: #eef1f6; color: var(--text); border-bottom-left-radius: 2px; }
+  .file-item { padding: 10px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; font-size: 14px; cursor: pointer; }
+  .file-item.selected { border-color: var(--primary); background: #eef4ff; }
+  .file-item small { color: var(--muted); display: block; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  th, td { border: 1px solid var(--border); padding: 4px 6px; text-align: left; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; background: #eef1f6; margin-right: 4px; margin-top: 4px; }
+  nav { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid var(--border);
+    display: flex; justify-content: space-around; padding: 8px 0; }
+  nav button { width: auto; background: none; color: var(--muted); font-size: 12px; font-weight: 500; padding: 6px 10px; margin: 0; }
+  nav button.active { color: var(--primary); }
+  .muted { color: var(--muted); font-size: 12px; }
+  h3 { margin-top: 0; font-size: 15px; }
+</style>
+</head>
+<body>
+
+<header>Trợ lý xử lý công việc</header>
+
+<!-- CHAT -->
+<div class="screen active" id="screen-chat">
+  <div class="card">
+    <div class="chat-log" id="chatLog"></div>
+    <div id="chatAttachmentChip" class="muted" style="display:none; margin-bottom:8px;"></div>
+    <div style="display:flex; gap:8px; align-items:flex-end;">
+      <button type="button" onclick="document.getElementById('chatFileInput').click()"
+        style="width:auto; padding:10px 14px; margin:0; flex-shrink:0;" title="Đính kèm file">📎</button>
+      <textarea id="chatInput" rows="2" placeholder="Nhắn tin với trợ lý... (có thể đính kèm file 📎 để xử lý việc khác)"
+        style="margin:0;"></textarea>
+    </div>
+    <input type="file" id="chatFileInput" accept=".xlsx,.xls,.csv" style="display:none;" onchange="onChatFileSelected(event)" />
+    <button onclick="sendChat()" style="margin-top:8px;">Gửi</button>
+  </div>
+</div>
+
+<!-- KHACH HANG -->
+<div class="screen" id="screen-customer">
+  <div class="card">
+    <h3>1. Nhập dữ liệu khách hàng</h3>
+    <label>Khách hàng</label>
+    <select id="customerSelect" onchange="onCustomerSelectChange()"></select>
+    <div id="customerNewBox" style="display:none;">
+      <input id="customerNewInput" placeholder="Nhập tên khách hàng mới" />
+      <button class="outline" onclick="addCustomerInline()">+ Thêm vào danh mục</button>
+    </div>
+
+    <div class="row-btns">
+      <button type="button" id="modeFileBtn" onclick="setInputMode('file')">📁 Tải file Excel</button>
+      <button type="button" id="modePasteBtn" class="outline" onclick="setInputMode('paste')">📋 Dán dữ liệu</button>
+    </div>
+
+    <div id="fileModeBox">
+      <label>Chọn file Excel</label>
+      <input id="fileInput" type="file" accept=".xlsx,.xls,.csv" />
+    </div>
+
+    <div id="pasteModeBox" style="display:none;">
+      <label>Dán dữ liệu khách hàng gửi (copy từ Excel, Zalo, tin nhắn...)</label>
+      <textarea id="pasteInput" rows="6" placeholder="Dán dữ liệu vào đây..."></textarea>
+    </div>
+
+    <label style="display:flex; align-items:center; gap:6px; margin:4px 0 10px;">
+      <input type="checkbox" id="hasHeaderCheckbox" checked style="width:auto; margin:0;" />
+      <span style="font-size:13px; color:var(--muted);">Dữ liệu có dòng tiêu đề (header) ở đầu</span>
+    </label>
+
+    <button onclick="submitCustomerData()">Xác nhận dữ liệu</button>
+    <div id="uploadResult" class="muted"></div>
+  </div>
+
+  <div class="card" id="processCard" style="display:none;">
+    <h3>2. Yêu cầu xử lý (không bắt buộc)</h3>
+    <label>Bạn muốn AI làm gì với dữ liệu này?</label>
+    <textarea id="instruction" rows="2" placeholder="VD: tính tổng doanh thu theo từng ngày"></textarea>
+    <button class="secondary" onclick="processFile()">Xử lý bằng AI</button>
+    <button class="outline" onclick="skipToSave()">Không cần xử lý, lưu dữ liệu gốc luôn</button>
+    <div id="processResult" class="muted"></div>
+  </div>
+
+  <div class="card" id="saveCard" style="display:none;">
+    <h3>3. Bạn có muốn lưu lại dữ liệu này không?</h3>
+    <p class="muted">Lưu lại thì mới có thể phân việc cho nhân viên và tính vào thống kê cuối ngày.</p>
+    <div class="row-btns">
+      <button class="secondary" onclick="saveTempFile()">✅ Lưu lại</button>
+      <button class="danger" onclick="discardTempFile()">🗑️ Không lưu</button>
+    </div>
+    <div id="saveResult" class="muted"></div>
+  </div>
+
+  <div class="card">
+    <h3>Hồ sơ khách hàng đã lưu</h3>
+    <div id="fileList"></div>
+  </div>
+</div>
+
+<!-- PHAN VIEC (theo tung dong du lieu) -->
+<div class="screen" id="screen-assign">
+  <div class="card">
+    <h3>Chọn hồ sơ khách hàng</h3>
+    <div id="assignFileList"></div>
+  </div>
+
+  <div class="card" id="assignDetailCard" style="display:none;">
+    <h3 id="assignDetailTitle"></h3>
+    <p class="muted" id="assignDetailStatus"></p>
+    <div id="assignBreakdown"></div>
+    <button class="danger" id="revokeAllBtn" style="display:none; margin-top:8px;" onclick="revokeAllForFile()">🔄 Thu hồi tất cả (đặt lại toàn bộ)</button>
+    <hr style="border-color:var(--border); margin:12px 0;" />
+    <label>Nhân viên</label>
+    <select id="employeeSelect" onchange="onEmployeeSelectChange()"></select>
+    <div id="employeeNewBox" style="display:none;">
+      <input id="employeeNewInput" placeholder="Nhập tên nhân viên mới" />
+      <button class="outline" onclick="addEmployeeInline()">+ Thêm vào danh mục</button>
+    </div>
+    <label>Số dòng muốn gán cho nhân viên này</label>
+    <input id="assignRowCount" type="number" min="1" placeholder="VD: 40" />
+    <button onclick="assignRows()">Gán</button>
+    <div id="assignResult" class="muted"></div>
+
+    <div id="assignSmsBox" style="display:none; margin-top:12px;">
+      <label>📩 Tin nhắn để copy gửi Zalo cho nhân viên</label>
+      <textarea id="assignSmsText" rows="6" readonly style="font-family: monospace; font-size:13px;"></textarea>
+      <button class="secondary" onclick="copyAssignSms()">📋 Sao chép tin nhắn</button>
+    </div>
+  </div>
+</div>
+
+<!-- THONG KE -->
+<div class="screen" id="screen-summary">
+  <div class="card">
+    <h3>Thống kê hôm nay (tổng hợp)</h3>
+    <button onclick="loadSummary()">Tải lại thống kê</button>
+    <div id="summaryTable"></div>
+    <br/>
+    <button class="secondary" onclick="exportSummary()">Xuất file Excel (tổng hợp)</button>
+  </div>
+
+  <div class="card">
+    <h3>Chi tiết từng dòng dữ liệu</h3>
+    <p class="muted">Xem từng dòng: của khách hàng nào, gán cho nhân viên nào, lúc nào.</p>
+    <button onclick="loadSummaryDetail()">Xem chi tiết</button>
+    <div id="summaryDetailTable" style="max-height: 45vh; overflow-y: auto;"></div>
+    <br/>
+    <button class="secondary" onclick="exportSummaryDetail()">Xuất file Excel (chi tiết)</button>
+  </div>
+
+  <div class="card">
+    <h3>Hỏi AI về dữ liệu thống kê</h3>
+    <label>VD: "Hôm nay khách hàng ABC gửi cho ai nhiều nhất?", "Nhân viên A hôm nay nhận bao nhiêu dòng?"</label>
+    <textarea id="summaryQuestion" rows="2" placeholder="Nhập câu hỏi..."></textarea>
+    <button onclick="askSummary()">Hỏi AI</button>
+    <div id="summaryAnswer" class="muted"></div>
+  </div>
+</div>
+
+<!-- DANH MUC -->
+<div class="screen" id="screen-catalog">
+  <div class="card">
+    <h3>Danh mục khách hàng</h3>
+    <div class="row-btns">
+      <input id="catalogCustomerInput" placeholder="Tên khách hàng mới" style="margin-bottom:0;" />
+      <button style="width:auto; margin-bottom:0;" onclick="addCatalogCustomer()">Thêm</button>
+    </div>
+    <div id="catalogCustomerList" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="card">
+    <h3>Danh mục nhân viên</h3>
+    <div class="row-btns">
+      <input id="catalogEmployeeInput" placeholder="Tên nhân viên mới" style="margin-bottom:0;" />
+      <button style="width:auto; margin-bottom:0;" onclick="addCatalogEmployee()">Thêm</button>
+    </div>
+    <div id="catalogEmployeeList" style="margin-top:10px;"></div>
+  </div>
+</div>
+
+<nav>
+  <button class="active" onclick="showScreen('chat', this)">💬 Chat</button>
+  <button onclick="showScreen('customer', this)">📂 Khách hàng</button>
+  <button onclick="showScreen('assign', this)">👤 Phân việc</button>
+  <button onclick="showScreen('summary', this)">📊 Thống kê</button>
+  <button onclick="showScreen('catalog', this)">⚙️ Danh mục</button>
+</nav>
+
+<script>
+const API = '';
+let sessionId = localStorage.getItem('sessionId');
+if (!sessionId) {
+  sessionId = 'session-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+  localStorage.setItem('sessionId', sessionId);
+}
+
+let currentTempFileId = null;
+let selectedCustomerFileId = null;
+
+function showScreen(name, btn) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + name).classList.add('active');
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (name === 'assign') { loadFilesForAssign(); loadEmployeeSelect(); }
+  if (name === 'customer') { loadFileList(); loadCustomerSelect(); }
+  if (name === 'catalog') { loadCatalogCustomers(); loadCatalogEmployees(); }
+}
+
+// ---------- CHAT ----------
+let pendingAttachmentId = null;
+let pendingAttachmentName = null;
+
+async function onChatFileSelected(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append('sessionId', sessionId);
+  form.append('file', file);
+  form.append('hasHeader', 'true');
+
+  const res = await fetch(`${API}/api/chat/attach`, { method: 'POST', body: form });
+  const data = await res.json();
+  e.target.value = '';
+  if (data.error) { alert(data.error); return; }
+
+  pendingAttachmentId = data.attachmentId;
+  pendingAttachmentName = data.filename;
+  const chip = document.getElementById('chatAttachmentChip');
+  chip.style.display = 'block';
+  chip.innerHTML = `📎 ${data.filename} (${data.rowCount} dòng) <a href="#" onclick="clearChatAttachment(); return false;" style="color:var(--primary); margin-left:6px;">Bỏ đính kèm</a>`;
+}
+
+function clearChatAttachment() {
+  pendingAttachmentId = null;
+  pendingAttachmentName = null;
+  document.getElementById('chatAttachmentChip').style.display = 'none';
+}
+
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text && !pendingAttachmentId) return;
+  const messageText = text || 'Xử lý giúp tôi file đính kèm này.';
+
+  appendBubble(pendingAttachmentName ? `${messageText}\n📎 ${pendingAttachmentName}` : messageText, 'user');
+  input.value = '';
+  const attachmentId = pendingAttachmentId;
+  clearChatAttachment();
+  appendBubble('Đang trả lời...', 'bot', 'thinking');
+
+  try {
+    const res = await fetch(`${API}/api/chat`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, message: messageText, attachmentId }),
+    });
+    const data = await res.json();
+    document.getElementById('thinking')?.remove();
+    appendBubble(data.reply || data.error, 'bot', null, data.downloadUrl);
+  } catch (e) {
+    document.getElementById('thinking')?.remove();
+    appendBubble('Lỗi kết nối server.', 'bot');
+  }
+}
+function appendBubble(text, who, id, downloadUrl) {
+  const log = document.getElementById('chatLog');
+  const div = document.createElement('div');
+  div.className = 'bubble ' + who;
+  if (id) div.id = id;
+  div.textContent = text;
+
+  const actionsRow = document.createElement('div');
+  actionsRow.style.display = 'flex';
+  actionsRow.style.gap = '10px';
+  actionsRow.style.marginTop = '6px';
+
+  // Voi tin nhan AI co nhieu dong (vd: danh sach SDT - seri sim), them nut Sao chep
+  // de copy chinh xac ca xuong dong, khong phu thuoc boi den thu cong tren dien thoai (de loi/rong).
+  if (who === 'bot' && text.includes('\n')) {
+    const copyBtn = document.createElement('a');
+    copyBtn.href = '#';
+    copyBtn.textContent = '📋 Sao chép';
+    copyBtn.style.fontWeight = '600';
+    copyBtn.style.color = 'var(--primary)';
+    copyBtn.onclick = (e) => {
+      e.preventDefault();
+      navigator.clipboard?.writeText(text).then(
+        () => { copyBtn.textContent = '✅ Đã sao chép'; setTimeout(() => { copyBtn.textContent = '📋 Sao chép'; }, 1500); },
+        () => alert('Không sao chép được, vui lòng bôi đen thủ công.')
+      );
+    };
+    actionsRow.appendChild(copyBtn);
+  }
+
+  if (downloadUrl) {
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.target = '_blank';
+    link.textContent = '📎 Tải file Excel';
+    link.style.fontWeight = '600';
+    link.style.color = who === 'user' ? 'white' : 'var(--primary)';
+    actionsRow.appendChild(link);
+  }
+
+  if (actionsRow.childNodes.length) div.appendChild(actionsRow);
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+// ---------- DROPDOWN KHACH HANG (upload) ----------
+async function loadCustomerSelect() {
+  const res = await fetch(`${API}/api/customers`);
+  const customers = await res.json();
+  const sel = document.getElementById('customerSelect');
+  const prev = sel.value;
+  sel.innerHTML =
+    '<option value="">-- Chọn khách hàng --</option>' +
+    customers.map(c => `<option value="${c.name}">${c.name}</option>`).join('') +
+    '<option value="__new__">+ Thêm khách hàng mới...</option>';
+  if (customers.some(c => c.name === prev)) sel.value = prev;
+  onCustomerSelectChange();
+}
+function onCustomerSelectChange() {
+  const isNew = document.getElementById('customerSelect').value === '__new__';
+  document.getElementById('customerNewBox').style.display = isNew ? 'block' : 'none';
+}
+async function addCustomerInline() {
+  const name = document.getElementById('customerNewInput').value.trim();
+  if (!name) return;
+  const res = await fetch(`${API}/api/customers`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+  });
+  const data = await res.json();
+  if (data.error) { alert(data.error); return; }
+  document.getElementById('customerNewInput').value = '';
+  await loadCustomerSelect();
+  document.getElementById('customerSelect').value = data.name;
+  onCustomerSelectChange();
+}
+
+// ---------- DROPDOWN NHAN VIEN (phan viec) ----------
+async function loadEmployeeSelect() {
+  const res = await fetch(`${API}/api/employees`);
+  const employees = await res.json();
+  const sel = document.getElementById('employeeSelect');
+  const prev = sel.value;
+  sel.innerHTML =
+    '<option value="">-- Chọn nhân viên --</option>' +
+    employees.map(e => `<option value="${e.name}">${e.name}</option>`).join('') +
+    '<option value="__new__">+ Thêm nhân viên mới...</option>';
+  if (employees.some(e => e.name === prev)) sel.value = prev;
+  onEmployeeSelectChange();
+}
+function onEmployeeSelectChange() {
+  const isNew = document.getElementById('employeeSelect').value === '__new__';
+  document.getElementById('employeeNewBox').style.display = isNew ? 'block' : 'none';
+}
+async function addEmployeeInline() {
+  const name = document.getElementById('employeeNewInput').value.trim();
+  if (!name) return;
+  const res = await fetch(`${API}/api/employees`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+  });
+  const data = await res.json();
+  if (data.error) { alert(data.error); return; }
+  document.getElementById('employeeNewInput').value = '';
+  await loadEmployeeSelect();
+  document.getElementById('employeeSelect').value = data.name;
+  onEmployeeSelectChange();
+}
+
+// ---------- TAB DANH MUC ----------
+async function loadCatalogCustomers() {
+  const res = await fetch(`${API}/api/customers`);
+  const customers = await res.json();
+  document.getElementById('catalogCustomerList').innerHTML = customers.map(c => `
+    <div class="file-item" style="display:flex; justify-content:space-between; align-items:center;">
+      <span>${c.name}</span>
+      <button class="danger" style="width:auto; margin:0; padding:6px 10px;" onclick="deleteCatalogCustomer(${c.id})">Xoá</button>
+    </div>`).join('') || '<p class="muted">Chưa có khách hàng nào.</p>';
+}
+async function addCatalogCustomer() {
+  const name = document.getElementById('catalogCustomerInput').value.trim();
+  if (!name) return;
+  const res = await fetch(`${API}/api/customers`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+  });
+  const data = await res.json();
+  if (data.error) { alert(data.error); return; }
+  document.getElementById('catalogCustomerInput').value = '';
+  loadCatalogCustomers();
+}
+async function deleteCatalogCustomer(id) {
+  if (!confirm('Xoá khách hàng này khỏi danh mục?')) return;
+  await fetch(`${API}/api/customers/${id}`, { method: 'DELETE' });
+  loadCatalogCustomers();
+}
+
+async function loadCatalogEmployees() {
+  const res = await fetch(`${API}/api/employees`);
+  const employees = await res.json();
+  document.getElementById('catalogEmployeeList').innerHTML = employees.map(e => `
+    <div class="file-item" style="display:flex; justify-content:space-between; align-items:center;">
+      <span>${e.name}</span>
+      <button class="danger" style="width:auto; margin:0; padding:6px 10px;" onclick="deleteCatalogEmployee(${e.id})">Xoá</button>
+    </div>`).join('') || '<p class="muted">Chưa có nhân viên nào.</p>';
+}
+async function addCatalogEmployee() {
+  const name = document.getElementById('catalogEmployeeInput').value.trim();
+  if (!name) return;
+  const res = await fetch(`${API}/api/employees`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+  });
+  const data = await res.json();
+  if (data.error) { alert(data.error); return; }
+  document.getElementById('catalogEmployeeInput').value = '';
+  loadCatalogEmployees();
+}
+async function deleteCatalogEmployee(id) {
+  if (!confirm('Xoá nhân viên này khỏi danh mục?')) return;
+  await fetch(`${API}/api/employees/${id}`, { method: 'DELETE' });
+  loadCatalogEmployees();
+}
+
+// ---------- UPLOAD (TAM) ----------
+let inputMode = 'file';
+function setInputMode(mode) {
+  inputMode = mode;
+  document.getElementById('fileModeBox').style.display = mode === 'file' ? 'block' : 'none';
+  document.getElementById('pasteModeBox').style.display = mode === 'paste' ? 'block' : 'none';
+  document.getElementById('modeFileBtn').classList.toggle('outline', mode !== 'file');
+  document.getElementById('modePasteBtn').classList.toggle('outline', mode !== 'paste');
+}
+
+async function submitCustomerData() {
+  if (inputMode === 'file') await uploadFile();
+  else await uploadPaste();
+}
+
+function handleUploadResponse(data) {
+  if (data.error) { document.getElementById('uploadResult').textContent = 'Lỗi: ' + data.error; return; }
+  currentTempFileId = data.tempFileId;
+  document.getElementById('uploadResult').textContent =
+    `Đã nhận ${data.rowCount} dòng cho khách hàng "${data.customerName}".`;
+  document.getElementById('processCard').style.display = 'block';
+  document.getElementById('saveCard').style.display = 'none';
+}
+
+async function uploadFile() {
+  const customerName = document.getElementById('customerSelect').value.trim();
+  const fileInput = document.getElementById('fileInput');
+  const hasHeader = document.getElementById('hasHeaderCheckbox').checked;
+  if (!customerName || customerName === '__new__' || !fileInput.files[0]) {
+    alert('Chọn khách hàng (hoặc thêm mới) và chọn file');
+    return;
+  }
+
+  const form = new FormData();
+  form.append('sessionId', sessionId);
+  form.append('customerName', customerName);
+  form.append('file', fileInput.files[0]);
+  form.append('hasHeader', hasHeader ? 'true' : 'false');
+
+  const res = await fetch(`${API}/api/upload`, { method: 'POST', body: form });
+  handleUploadResponse(await res.json());
+}
+
+async function uploadPaste() {
+  const customerName = document.getElementById('customerSelect').value.trim();
+  const pastedText = document.getElementById('pasteInput').value;
+  const hasHeader = document.getElementById('hasHeaderCheckbox').checked;
+  if (!customerName || customerName === '__new__' || !pastedText.trim()) {
+    alert('Chọn khách hàng (hoặc thêm mới) và dán dữ liệu vào ô');
+    return;
+  }
+
+  const res = await fetch(`${API}/api/upload-paste`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId, customerName, pastedText, hasHeader }),
+  });
+  handleUploadResponse(await res.json());
+}
+
+async function processFile() {
+  const instruction = document.getElementById('instruction').value.trim();
+  if (!currentTempFileId || !instruction) { alert('Nhập yêu cầu xử lý'); return; }
+  document.getElementById('processResult').textContent = 'Đang xử lý...';
+  const res = await fetch(`${API}/api/process`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tempFileId: currentTempFileId, instruction }),
+  });
+  const data = await res.json();
+  if (data.error) { document.getElementById('processResult').textContent = 'Lỗi: ' + data.error; return; }
+  document.getElementById('processResult').innerHTML =
+    `Xong! ${data.rowCount} dòng kết quả. <a href="${data.downloadUrl}" target="_blank">Tải file Excel</a>`;
+  document.getElementById('saveCard').style.display = 'block';
+}
+
+function skipToSave() {
+  if (!currentTempFileId) { alert('Chưa upload file'); return; }
+  document.getElementById('saveCard').style.display = 'block';
+}
+
+async function saveTempFile() {
+  const res = await fetch(`${API}/api/save`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tempFileId: currentTempFileId }),
+  });
+  const data = await res.json();
+  if (data.error) { document.getElementById('saveResult').textContent = 'Lỗi: ' + data.error; return; }
+  document.getElementById('saveResult').textContent = `Đã lưu vào hồ sơ khách hàng (${data.rowCount} dòng).`;
+  resetUploadForm();
+  loadFileList();
+  loadCustomerSelect();
+}
+
+async function discardTempFile() {
+  await fetch(`${API}/api/discard`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tempFileId: currentTempFileId }),
+  });
+  document.getElementById('saveResult').textContent = 'Đã bỏ qua, không lưu dữ liệu này.';
+  resetUploadForm();
+}
+
+function resetUploadForm() {
+  currentTempFileId = null;
+  document.getElementById('customerSelect').value = '';
+  document.getElementById('customerNewBox').style.display = 'none';
+  document.getElementById('fileInput').value = '';
+  document.getElementById('pasteInput').value = '';
+  document.getElementById('hasHeaderCheckbox').checked = true;
+  setInputMode('file');
+  document.getElementById('instruction').value = '';
+  document.getElementById('processCard').style.display = 'none';
+  document.getElementById('saveCard').style.display = 'none';
+  document.getElementById('uploadResult').textContent = '';
+  document.getElementById('processResult').textContent = '';
+}
+
+async function loadFileList() {
+  const res = await fetch(`${API}/api/files/${sessionId}`);
+  const files = await res.json();
+  const el = document.getElementById('fileList');
+  el.innerHTML = files.map(f => `
+    <div class="file-item">
+      <b>${f.customer_name}</b> — ${f.original_filename}
+      <small>${f.totalRows} dòng · còn ${f.unassignedRows} dòng chưa gán · ${new Date(f.created_at).toLocaleString('vi-VN')}</small>
+    </div>
+  `).join('') || '<p class="muted">Chưa có hồ sơ nào được lưu.</p>';
+}
+
+// ---------- PHAN VIEC THEO DONG ----------
+async function loadFilesForAssign() {
+  const res = await fetch(`${API}/api/files/${sessionId}`);
+  const files = await res.json();
+  const el = document.getElementById('assignFileList');
+  if (!files.length) { el.innerHTML = '<p class="muted">Chưa có hồ sơ khách hàng nào.</p>'; return; }
+  el.innerHTML = files.map(f => `
+    <div class="file-item ${selectedCustomerFileId === f.id ? 'selected' : ''}" onclick="selectAssignFile(${f.id}, '${f.customer_name.replace(/'/g, "\\'")}')">
+      <b>${f.customer_name}</b> — ${f.original_filename}
+      <small>${f.totalRows} dòng · còn ${f.unassignedRows} dòng chưa gán</small>
+    </div>
+  `).join('');
+}
+
+async function selectAssignFile(id, name) {
+  selectedCustomerFileId = id;
+  loadFilesForAssign();
+  document.getElementById('assignDetailCard').style.display = 'block';
+  document.getElementById('assignDetailTitle').textContent = `Phân việc cho: ${name}`;
+  document.getElementById('assignSmsBox').style.display = 'none';
+  document.getElementById('assignResult').textContent = '';
+  await refreshAssignStatus();
+}
+
+async function refreshAssignStatus() {
+  const res = await fetch(`${API}/api/files/${selectedCustomerFileId}/status`);
+  const status = await res.json();
+  document.getElementById('assignDetailStatus').textContent =
+    `Tổng ${status.total} dòng — còn ${status.unassigned} dòng chưa gán.`;
+  document.getElementById('assignBreakdown').innerHTML = status.breakdown.length
+    ? status.breakdown.map(b => `
+        <span class="badge">${b.employee}: ${b.rowCount} dòng
+          <a href="#" onclick="revokeEmployee('${b.employee.replace(/'/g, "\\'")}'); return false;"
+             style="color:#ef4444; margin-left:4px; font-weight:600;" title="Thu hồi">×</a>
+        </span>`).join('')
+    : '<span class="muted">Chưa gán cho ai.</span>';
+  document.getElementById('revokeAllBtn').style.display = status.breakdown.length ? 'block' : 'none';
+}
+
+async function revokeEmployee(employeeName) {
+  if (!confirm(`Thu hồi toàn bộ dữ liệu đã gán cho "${employeeName}"? Các dòng này sẽ về trạng thái chưa gán.`)) return;
+  const res = await fetch(`${API}/api/revoke-assignment`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ customerFileId: selectedCustomerFileId, employeeName }),
+  });
+  const data = await res.json();
+  if (data.error) { alert('Lỗi: ' + data.error); return; }
+  document.getElementById('assignResult').textContent = `Đã thu hồi ${data.revoked} dòng của ${employeeName}.`;
+  await refreshAssignStatus();
+  loadFilesForAssign();
+}
+
+async function revokeAllForFile() {
+  if (!confirm('Thu hồi TOÀN BỘ phân việc của hồ sơ này? Tất cả dòng sẽ về trạng thái chưa gán.')) return;
+  const res = await fetch(`${API}/api/revoke-all`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ customerFileId: selectedCustomerFileId }),
+  });
+  const data = await res.json();
+  if (data.error) { alert('Lỗi: ' + data.error); return; }
+  document.getElementById('assignResult').textContent = `Đã thu hồi ${data.revoked} dòng.`;
+  document.getElementById('assignSmsBox').style.display = 'none';
+  await refreshAssignStatus();
+  loadFilesForAssign();
+}
+
+async function assignRows() {
+  const employeeName = document.getElementById('employeeSelect').value.trim();
+  const rowCount = parseInt(document.getElementById('assignRowCount').value, 10);
+  if (!selectedCustomerFileId || !employeeName || employeeName === '__new__' || !rowCount) {
+    alert('Chọn nhân viên (hoặc thêm mới) và nhập số dòng');
+    return;
+  }
+
+  const res = await fetch(`${API}/api/assign-rows`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ customerFileId: selectedCustomerFileId, employeeName, rowCount }),
+  });
+  const data = await res.json();
+  if (data.error) { document.getElementById('assignResult').textContent = 'Lỗi: ' + data.error; return; }
+  document.getElementById('assignResult').textContent =
+    `Đã gán ${data.assigned} dòng cho ${employeeName}. Còn ${data.status.unassigned} dòng chưa gán.`;
+  document.getElementById('employeeSelect').value = '';
+  document.getElementById('employeeNewBox').style.display = 'none';
+  document.getElementById('assignRowCount').value = '';
+
+  if (data.smsText) {
+    document.getElementById('assignSmsText').value = data.smsText;
+    document.getElementById('assignSmsBox').style.display = 'block';
+  }
+
+  await refreshAssignStatus();
+  loadFilesForAssign();
+}
+
+function copyAssignSms() {
+  const textarea = document.getElementById('assignSmsText');
+  textarea.select();
+  navigator.clipboard?.writeText(textarea.value).then(
+    () => alert('Đã sao chép! Dán vào Zalo để gửi cho nhân viên.'),
+    () => document.execCommand('copy')
+  ) || document.execCommand('copy');
+}
+
+// ---------- THONG KE ----------
+async function loadSummary() {
+  const res = await fetch(`${API}/api/summary`);
+  const rows = await res.json();
+  const el = document.getElementById('summaryTable');
+  if (!rows.length) { el.innerHTML = '<p class="muted">Chưa có dữ liệu hôm nay.</p>'; return; }
+  el.innerHTML = `
+    <table>
+      <tr><th>Khách hàng</th><th>Nhân viên</th><th>Số dòng</th><th>Lần cuối</th></tr>
+      ${rows.map(r => `
+        <tr>
+          <td>${r.customer_name}</td><td>${r.employee_name}</td><td>${r.row_count}</td>
+          <td>${new Date(r.last_time).toLocaleTimeString('vi-VN')}</td>
+        </tr>`).join('')}
+    </table>`;
+}
+function exportSummary() { window.location.href = `${API}/api/summary/export`; }
+
+// ---------- CHI TIET TUNG DONG ----------
+async function loadSummaryDetail() {
+  const el = document.getElementById('summaryDetailTable');
+  el.innerHTML = '<p class="muted">Đang tải...</p>';
+  const res = await fetch(`${API}/api/summary/detail`);
+  const rows = await res.json();
+  if (!rows.length) { el.innerHTML = '<p class="muted">Chưa có dòng dữ liệu nào được gán hôm nay.</p>'; return; }
+
+  // Gom tat ca ten cot xuat hien (vi moi khach hang co the co cot khac nhau)
+  const allKeys = [];
+  rows.forEach(r => Object.keys(r).forEach(k => { if (!allKeys.includes(k)) allKeys.push(k); }));
+
+  el.innerHTML = `
+    <table>
+      <tr>${allKeys.map(k => `<th>${k}</th>`).join('')}</tr>
+      ${rows.map(r => `<tr>${allKeys.map(k => `<td>${r[k] !== undefined ? r[k] : ''}</td>`).join('')}</tr>`).join('')}
+    </table>`;
+}
+function exportSummaryDetail() { window.location.href = `${API}/api/summary/detail/export`; }
+
+async function askSummary() {
+  const question = document.getElementById('summaryQuestion').value.trim();
+  if (!question) return;
+  document.getElementById('summaryAnswer').textContent = 'Đang hỏi AI...';
+  const res = await fetch(`${API}/api/summary/ask`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question }),
+  });
+  const data = await res.json();
+  document.getElementById('summaryAnswer').textContent = data.answer || ('Lỗi: ' + data.error);
+}
+</script>
+</body>
+</html>

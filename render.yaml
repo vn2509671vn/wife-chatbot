@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: wife-chatbot
+    runtime: node
+    plan: free                # Goi Free: KHONG gan duoc persistent disk -> du lieu se mat khi deploy lai/restart
+    region: singapore         # doi region gan ban nhat neu can (vd: oregon, frankfurt...)
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: OPENROUTER_API_KEY
+        sync: false          # se nhap tay tren dashboard, khong luu trong file nay
+      - key: OPENROUTER_MODEL
+        value: google/gemini-2.5-flash-lite
